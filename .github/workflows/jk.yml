@@ -99,6 +99,7 @@ jobs:
             """))
 
       - name: Configure (CMake)
+        shell: bash
         run: |
           cmake -S ${{ matrix.platform.source_dir }} -B build \
           -G ${{ matrix.platform.generator }} \
@@ -129,6 +130,7 @@ jobs:
           cmake --install build/
 
       - name: Verify CMake configuration files
+        shell: bash
         run: |
           cmake -S cmake/test -B cmake_config_build -G ${{ matrix.platform.generator }} \
             -DCMAKE_BUILD_TYPE=Release \
