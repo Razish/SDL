@@ -1,0 +1,154 @@
+name: Build (JK)
+
+on: [workflow_dispatch]
+
+jobs:
+  Build-CMake:
+    name: ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os }}
+
+    defaults:
+      run:
+        shell: ${{ matrix.platform.shell }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - {
+              name: Ubuntu 20.04 (CMake),
+              generator: Ninja,
+              install_prefix: cmake_prefix,
+              os: ubuntu-20.04,
+              shell: sh,
+              source_dir: .,
+            }
+          - {
+              name: MacOS (CMake),
+              cmake_flags: '-DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"',
+              generator: Ninja,
+              install_prefix: cmake_prefix,
+              os: macos-latest,
+              shell: sh,
+              source_dir: .,
+            }
+          - {
+              name: Windows (x64),
+              cmake_flags: -A x64,
+              generator: Ninja,
+              install_prefix: prefix,
+              os: windows-latest,
+              project: VisualC/SDL.sln,
+              project_flags: "/p:Platform=x64",
+              shell: pwsh,
+              source_dir: build,
+            }
+          - {
+              name: Windows (x86),
+              cmake_flags: -A Win32,
+              generator: Ninja,
+              install_prefix: prefix,
+              os: windows-latest,
+              project: VisualC/SDL.sln,
+              project_flags: "/p:Platform=Win32",
+              shell: pwsh,
+              source_dir: build,
+            }
+
+    steps:
+      - name: Setup Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install build-essential git make autoconf automake libtool \
+              pkg-config cmake ninja-build gnome-desktop-testing libasound2-dev libpulse-dev \
+              libaudio-dev libjack-dev libsndio-dev libsamplerate0-dev libx11-dev libxext-dev \
+              libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libwayland-dev \
+              libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev \
+              libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev fcitx-libs-dev
+
+      - name: Setup Macos dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install \
+            ninja \
+            pkg-config
+
+      - uses: actions/checkout@v3
+
+      - name: Create CMake project using SDL as a subproject
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import os
+          import textwrap
+          srcdir = r"${{ github.workspace }}".replace("\\", "/")
+          builddir = f"{ srcdir }/build"
+          os.makedirs(builddir)
+          with open(f"{ builddir }/CMakeLists.txt", "w") as f:
+            f.write(textwrap.dedent(f"""\
+              # Always build .PDB symbol file
+              set(CMAKE_POLICY_DEFAULT_CMP0141 "NEW" CACHE STRING "MSVC debug information format flags are selected by an abstraction")
+              set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "ProgramDatabase" CACHE STRING "MSVC debug information format")
+              set(CMAKE_EXE_LINKER_FLAGS "-DEBUG" CACHE STRING "Linker flags for executables")
+              set(CMAKE_SHARED_LINKER_FLAGS "-DEBUG" CACHE STRING "Linker flag for shared libraries")
+              cmake_minimum_required(VERSION 3.0...3.25)
+              project(sdl_user)
+              enable_testing()
+              add_subdirectory("{ srcdir }" SDL)
+            """))
+
+      - name: Configure (CMake)
+        run: |
+          cmake -S ${{ matrix.platform.source_dir }} -B build \
+          -G ${{ matrix.platform.generator }} \
+          -DSDL_WERROR=ON \
+          -DSDL_TESTS=OFF \
+          -DSDL_INSTALL_TESTS=OFF \
+          -DSDL_VENDOR_INFO="Github Workflow" \
+          -DCMAKE_INSTALL_PREFIX=${{ matrix.platform.install_prefix }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          ${{ matrix.platform.cmake_flags }}
+
+      - name: Build (CMake)
+        run: |
+          cmake --build build/ --config Release --verbose --parallel
+
+      - name: Install (CMake)
+        if: runner.os != 'Windows'
+        run: |
+          set -eu
+          cmake --install build/ --config Release
+          echo "SDL2_DIR=$(pwd)/${{ matrix.platform.install_prefix }}" >> $GITHUB_ENV
+          ( cd ${{ matrix.platform.install_prefix }}; find ) | LC_ALL=C sort -u
+
+      - name: Install (CMake)
+        if: runner.os == 'Windows'
+        run: |
+          echo "SDL2_DIR=$Env:GITHUB_WORKSPACE/${{ matrix.platform.install_prefix }}" >> $Env:GITHUB_ENV
+          cmake --install build/
+
+      - name: Verify CMake configuration files
+        run: |
+          cmake -S cmake/test -B cmake_config_build -G ${{ matrix.platform.generator }} \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH=${{ env.SDL2_DIR }}
+          cmake --build cmake_config_build --config Release --verbose
+
+      - name: Verify sdl2-config
+        run: |
+          export PATH=${{ env.SDL2_DIR }}/bin:$PATH
+          cmake/test/test_sdlconfig.sh
+
+      - name: Verify sdl2.pc
+        run: |
+          export PKG_CONFIG_PATH=${{ env.SDL2_DIR }}/lib/pkgconfig
+          cmake/test/test_pkgconfig.sh
+
+      - name: Add msbuild to PATH
+        if: ${{ matrix.platform.project != '' }}
+        uses: microsoft/setup-msbuild@v1.1.3
+
+      - name: Build msbuild
+        if: ${{ matrix.platform.project != '' }}
+        run: msbuild ${{ matrix.platform.project }} /m /p:BuildInParallel=true /p:Configuration=Release ${{ matrix.platform.project_flags }}
