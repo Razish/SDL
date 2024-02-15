@@ -17,7 +17,7 @@ jobs:
         platform:
           - {
               name: Ubuntu 20.04 (CMake),
-              generator: Ninja,
+              cmake_flags: '-G Ninja -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"',
               install_prefix: cmake_prefix,
               os: ubuntu-20.04,
               shell: sh,
@@ -25,7 +25,7 @@ jobs:
             }
           - {
               name: MacOS (CMake),
-              cmake_flags: '-DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"',
+              cmake_flags: "-G Ninja",
               generator: Ninja,
               install_prefix: cmake_prefix,
               os: macos-latest,
@@ -35,7 +35,6 @@ jobs:
           - {
               name: Windows (x64),
               cmake_flags: -A x64,
-              generator: Ninja,
               install_prefix: prefix,
               os: windows-latest,
               project: VisualC/SDL.sln,
@@ -46,7 +45,6 @@ jobs:
           - {
               name: Windows (x86),
               cmake_flags: -A Win32,
-              generator: Ninja,
               install_prefix: prefix,
               os: windows-latest,
               project: VisualC/SDL.sln,
@@ -102,14 +100,13 @@ jobs:
         shell: bash
         run: |
           cmake -S ${{ matrix.platform.source_dir }} -B build \
-          -G ${{ matrix.platform.generator }} \
-          -DSDL_WERROR=ON \
-          -DSDL_TESTS=OFF \
-          -DSDL_INSTALL_TESTS=OFF \
-          -DSDL_VENDOR_INFO="Github Workflow" \
-          -DCMAKE_INSTALL_PREFIX=${{ matrix.platform.install_prefix }} \
-          -DCMAKE_BUILD_TYPE=Release \
-          ${{ matrix.platform.cmake_flags }}
+            -DSDL_WERROR=ON \
+            -DSDL_TESTS=OFF \
+            -DSDL_INSTALL_TESTS=OFF \
+            -DSDL_VENDOR_INFO="Github Workflow" \
+            -DCMAKE_INSTALL_PREFIX=${{ matrix.platform.install_prefix }} \
+            -DCMAKE_BUILD_TYPE=Release \
+            ${{ matrix.platform.cmake_flags }}
 
       - name: Build (CMake)
         run: |
@@ -132,9 +129,10 @@ jobs:
       - name: Verify CMake configuration files
         shell: bash
         run: |
-          cmake -S cmake/test -B cmake_config_build -G ${{ matrix.platform.generator }} \
+          cmake -S cmake/test -B cmake_config_build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH=${{ env.SDL2_DIR }}
+            -DCMAKE_PREFIX_PATH=${{ env.SDL2_DIR }} \
+            ${{ matrix.platform.cmake_flags }}
           cmake --build cmake_config_build --config Release --verbose
 
       - name: Verify sdl2-config
