@@ -56,6 +56,7 @@ jobs:
     steps:
       - name: Setup Linux dependencies
         if: runner.os == 'Linux'
+        shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install build-essential git make autoconf automake libtool \
@@ -67,10 +68,8 @@ jobs:
 
       - name: Setup Macos dependencies
         if: runner.os == 'macOS'
-        run: |
-          brew install \
-            ninja \
-            pkg-config
+        shell: bash
+        run: brew install ninja pkg-config
 
       - uses: actions/checkout@v3
 
@@ -109,11 +108,11 @@ jobs:
             ${{ matrix.platform.cmake_flags }}
 
       - name: Build (CMake)
-        run: |
-          cmake --build build/ --config Release --verbose --parallel
+        run: cmake --build build/ --config Release --verbose --parallel
 
       - name: Install (CMake)
         if: runner.os != 'Windows'
+        shell: bash
         run: |
           set -eu
           cmake --install build/ --config Release
@@ -122,11 +121,13 @@ jobs:
 
       - name: Install (CMake)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           echo "SDL2_DIR=$Env:GITHUB_WORKSPACE/${{ matrix.platform.install_prefix }}" >> $Env:GITHUB_ENV
           cmake --install build/
 
       - name: Verify CMake configuration files
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           cmake -S cmake/test -B cmake_config_build \
@@ -136,11 +137,15 @@ jobs:
           cmake --build cmake_config_build --config Release --verbose
 
       - name: Verify sdl2-config
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
           export PATH=${{ env.SDL2_DIR }}/bin:$PATH
           cmake/test/test_sdlconfig.sh
 
       - name: Verify sdl2.pc
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
           export PKG_CONFIG_PATH=${{ env.SDL2_DIR }}/lib/pkgconfig
           cmake/test/test_pkgconfig.sh
